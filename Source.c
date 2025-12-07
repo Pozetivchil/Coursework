@@ -170,7 +170,7 @@ void print_field(int** field, int rows, int cols) {
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
             if (field[i][j] == WHITE) {
-                printf(".");
+                printf("*");
             } else {
                 printf("%d", field[i][j]);
             }
