@@ -1,312 +1,201 @@
-﻿// Подключение стандартных библиотек для ввода-вывода, работы с памятью, временем и логическими значениями
-#include <stdio.h>    // Для функций printf, scanf и других операций ввода-вывода
-#include <stdlib.h>   // Для функций malloc, free, rand, srand
-#include <time.h>     // Для функции time (используется для инициализации генератора случайных чисел)
-#include <stdbool.h>  // Для использования типа bool (логические значения true/false)
+﻿#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
-// Определение констант для различных состояний клеток поля
-#define EMPTY 0   // Значение для пустой клетки (будет использоваться при создании решения)
-#define BLACK -1  // Значение для черной клетки (временная метка при создании решения)
-#define WHITE 0   // Значение для белой клетки в финальной головоломке
+#define EMPTY_CELL 0
+#define BLACK_CELL -1
+#define WHITE_CELL 0
 
-// Структура для хранения координат точки (клетки) на поле
-typedef struct {
-    int x;  // Координата строки (от 0 до rows-1)
-    int y;  // Координата столбца (от 0 до cols-1)
-} Point;
-
-// Структура для представления направления движения
-typedef struct {
-    int dx;  // Изменение по строке (-1 - вверх, 1 - вниз, 0 - не меняем строку)
-    int dy;  // Изменение по столбцу (-1 - влево, 1 - вправо, 0 - не меняем столбец)
-} Direction;
-
-// Массив четырех возможных направлений для рисования линий
-Direction directions[4] = {
-    {-1, 0},  // Вверх: уменьшаем номер строки, столбец не меняется
-    {1, 0},   // Вниз: увеличиваем номер строки, столбец не меняется
-    {0, -1},  // Влево: строка не меняется, уменьшаем номер столбца
-    {0, 1}    // Вправо: строка не меняется, увеличиваем номер столбца
+struct cell_pos {
+    int row;
+    int col;
 };
 
-// Функция создания двумерного массива (поля) заданного размера
-int** create_field(int rows, int cols) {
-    // Выделяем память для массива указателей на строки
-    int** field = (int**)malloc(rows * sizeof(int*));
+struct move_dir {
+    int row_change;
+    int col_change;
+};
 
-    // Для каждой строки выделяем память
-    for (int i = 0; i < rows; i++) {
-        // Выделяем память для одной строки (cols ячеек типа int)
-        field[i] = (int*)malloc(cols * sizeof(int));
+struct move_dir all_dirs[4] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
 
-        // Инициализируем все ячейки строки значением EMPTY (0)
-        for (int j = 0; j < cols; j++) {
-            field[i][j] = EMPTY;
+int** make_board(int r, int c) {
+    int** board = (int**)malloc(r * sizeof(int*));
+    int i, j;
+    for (i = 0; i < r; i++) {
+        board[i] = (int*)malloc(c * sizeof(int));
+        for (j = 0; j < c; j++) {
+            board[i][j] = EMPTY_CELL;
         }
     }
-
-    // Возвращаем указатель на созданное поле
-    return field;
+    return board;
 }
 
-// Функция освобождения памяти, занятой полем
-void free_field(int** field, int rows) {
-    // Освобождаем память каждой строки
-    for (int i = 0; i < rows; i++) {
-        free(field[i]);  // Освобождаем память i-ой строки
+void clear_board(int** board, int r) {
+    int i;
+    for (i = 0; i < r; i++) {
+        free(board[i]);
     }
-    // Освобождаем память массива указателей на строки
-    free(field);
+    free(board);
 }
 
-// Функция проверки, находятся ли координаты в пределах поля
-bool is_valid(int x, int y, int rows, int cols) {
-    // Проверяем, что x в диапазоне [0, rows-1] и y в диапазоне [0, cols-1]
-    return x >= 0 && x < rows && y >= 0 && y < cols;
+int in_bounds(int row, int col, int r, int c) {
+    return (row >= 0 && row < r && col >= 0 && col < c) ? 1 : 0;
 }
 
-// Функция проверки возможности размещения черной клетки в заданной позиции
-bool can_place_black(int** field, int x, int y, int rows, int cols) {
-    // Проверяем все четыре соседние клетки (сверху, снизу, слева, справа)
-    for (int i = 0; i < 4; i++) {
-        // Вычисляем координаты соседней клетки
-        int nx = x + directions[i].dx;
-        int ny = y + directions[i].dy;
-
-        // Если соседняя клетка существует и уже содержит черную клетку, возвращаем false
-        if (is_valid(nx, ny, rows, cols) && field[nx][ny] == BLACK) {
-            return false;
+int check_black_spot(int** board, int row, int col, int r, int c) {
+    int dir_idx;
+    for (dir_idx = 0; dir_idx < 4; dir_idx++) {
+        int next_row = row + all_dirs[dir_idx].row_change;
+        int next_col = col + all_dirs[dir_idx].col_change;
+        if (in_bounds(next_row, next_col, r, c) && board[next_row][next_col] == BLACK_CELL) {
+            return 0;
         }
     }
-
-    // Если ни в одной соседней клетке нет черной клетки, возвращаем true
-    return true;
+    return 1;
 }
 
-// Функция рисования линии от черной клетки в заданном направлении
-int draw_line(int** field, int x, int y, Direction dir, int rows, int cols, int id) {
-    int len = 0;  // Счетчик длины линии (количество белых клеток в линии)
-
-    // Начинаем с клетки, следующей за черной в заданном направлении
-    int cx = x + dir.dx;
-    int cy = y + dir.dy;
-
-    // Случайным образом ограничиваем максимальную длину линии от 2 до 4 клеток
-    int max_len = 2 + rand() % 3;
-
-    // Продолжаем рисовать линию, пока:
-    // 1. Клетка находится в пределах поля
-    // 2. Клетка пустая (EMPTY)
-    // 3. Не достигли максимальной длины линии
-    while (is_valid(cx, cy, rows, cols) &&
-        field[cx][cy] == EMPTY && len < max_len) {
-        // Помечаем клетку как часть линии с идентификатором id
-        field[cx][cy] = id;
-        len++;  // Увеличиваем счетчик длины линии
-
-        // Переходим к следующей клетке в том же направлении
-        cx += dir.dx;
-        cy += dir.dy;
+int make_line(int** board, int start_row, int start_col, struct move_dir way, int r, int c, int line_id) {
+    int line_size = 0;
+    int current_row = start_row + way.row_change;
+    int current_col = start_col + way.col_change;
+    
+    int limit = 2 + rand() % 3;
+    
+    while (line_size < limit && in_bounds(current_row, current_col, r, c) == 1 && board[current_row][current_col] == EMPTY_CELL) {
+        board[current_row][current_col] = line_id;
+        line_size++;
+        current_row += way.row_change;
+        current_col += way.col_change;
     }
-
-    // Возвращаем количество белых клеток в этой линии
-    return len;
+    
+    return line_size;
 }
 
-// Основная функция генерации головоломки
-int** generate_puzzle(int rows, int cols) {
-    // Создаем поле для построения решения (здесь будут нарисованы линии)
-    int** solution = create_field(rows, cols);
-
-    // Определяем количество черных клеток: от 3 до примерно 1/6 от всех клеток
-    int black_count = 3 + rand() % ((rows * cols) / 6);
-
-    // Ограничиваем максимальное количество черных клеток 8 (для удобства игры)
-    if (black_count > 8) black_count = 8;
-
-    // Выделяем память для массива черных клеток
-    Point* blacks = (Point*)malloc(black_count * sizeof(Point));
-
-    // Выделяем память для массива длин линий каждой черной клетки
-    int* lengths = (int*)calloc(black_count, sizeof(int));
-
-    // Счетчик размещенных черных клеток
+int** make_game(int r, int c) {
+    int** board_state = make_board(r, c);
+    
+    int black_limit = (r * c) / 6;
+    if (black_limit < 3) black_limit = 3;
+    if (black_limit > 8) black_limit = 8;
+    int black_total = 3 + rand() % (black_limit - 2);
+    
+    struct cell_pos* blacks = (struct cell_pos*)malloc(black_total * sizeof(struct cell_pos));
+    int* line_sizes = (int*)calloc(black_total, sizeof(int));
+    
     int placed = 0;
-
-    // Счетчик попыток размещения (чтобы избежать бесконечного цикла)
-    int attempts = 0;
-
-    // Максимальное количество попыток размещения черных клеток
-    int max_attempts = rows * cols * 3;
-
-    // Размещаем черные клетки на поле случайным образом
-    while (placed < black_count && attempts < max_attempts) {
-        // Генерируем случайные координаты
-        int x = rand() % rows;
-        int y = rand() % cols;
-
-        // Если клетка пустая и рядом нет других черных клеток
-        if (solution[x][y] == EMPTY && can_place_black(solution, x, y, rows, cols)) {
-            // Помечаем клетку как черную
-            solution[x][y] = BLACK;
-
-            // Сохраняем координаты черной клетки в массив
-            blacks[placed].x = x;
-            blacks[placed].y = y;
-
-            // Увеличиваем счетчик размещенных черных клеток
+    int tries = 0;
+    int max_tries = r * c * 3;
+    
+    while (placed < black_total && tries < max_tries) {
+        int rand_row = rand() % r;
+        int rand_col = rand() % c;
+        
+        if (board_state[rand_row][rand_col] == EMPTY_CELL && check_black_spot(board_state, rand_row, rand_col, r, c) == 1) {
+            board_state[rand_row][rand_col] = BLACK_CELL;
+            blacks[placed].row = rand_row;
+            blacks[placed].col = rand_col;
             placed++;
         }
-
-        // Увеличиваем счетчик попыток
-        attempts++;
+        tries++;
     }
-
-    // Если не удалось разместить все запланированные черные клетки
-    if (placed < black_count) {
-        // Уменьшаем black_count до фактически размещенного количества
-        black_count = placed;
+    
+    if (placed < black_total) {
+        black_total = placed;
     }
-
-    // Рисуем линии от каждой черной клетки
-    for (int i = 0; i < black_count; i++) {
-        // Создаем массив направлений [0, 1, 2, 3] для перемешивания
-        int dirs_to_draw[4] = { 0, 1, 2, 3 };
-
-        // Перемешиваем направления (тасование Фишера-Йетса)
-        for (int j = 0; j < 4; j++) {
-            // Выбираем случайный индекс от j до 3
-            int k = rand() % 4;
-
-            // Меняем местами элементы j и k
-            int temp = dirs_to_draw[j];
-            dirs_to_draw[j] = dirs_to_draw[k];
-            dirs_to_draw[k] = temp;
+    
+    int idx;
+    for (idx = 0; idx < black_total; idx++) {
+        int dir_list[4] = {0, 1, 2, 3};
+        int swap_idx;
+        for (swap_idx = 0; swap_idx < 4; swap_idx++) {
+            int swap_with = rand() % 4;
+            int temp = dir_list[swap_idx];
+            dir_list[swap_idx] = dir_list[swap_with];
+            dir_list[swap_with] = temp;
         }
-
-        // Каждая черная клетка рисует 1 или 2 линии
-        int lines_to_draw = 1 + rand() % 2;
-
-        // Рисуем линии в случайных направлениях
-        for (int j = 0; j < lines_to_draw; j++) {
-            // Берем направление из перемешанного массива
-            Direction dir = directions[dirs_to_draw[j]];
-
-            // Рисуем линию и добавляем ее длину к общей длине линий этой черной клетки
-            lengths[i] += draw_line(solution, blacks[i].x, blacks[i].y, dir, rows, cols, i + 1);
+        
+        int lines_made = 1 + rand() % 2;
+        int dir_idx;
+        for (dir_idx = 0; dir_idx < lines_made; dir_idx++) {
+            struct move_dir chosen_dir = all_dirs[dir_list[dir_idx]];
+            line_sizes[idx] += make_line(board_state, blacks[idx].row, blacks[idx].col, chosen_dir, r, c, idx + 1);
         }
-
-        // Если случайно не нарисовали ни одной линии (длина = 0)
-        if (lengths[i] == 0) {
-            // Рисуем линию в случайном направлении
-            Direction dir = directions[rand() % 4];
-            lengths[i] = draw_line(solution, blacks[i].x, blacks[i].y, dir, rows, cols, i + 1);
+        
+        if (line_sizes[idx] == 0) {
+            struct move_dir random_dir = all_dirs[rand() % 4];
+            line_sizes[idx] = make_line(board_state, blacks[idx].row, blacks[idx].col, random_dir, r, c, idx + 1);
         }
-
-        // Ограничиваем значение цифры максимум 4 (по правилам игры)
-        if (lengths[i] > 4) lengths[i] = 4;
+        
+        if (line_sizes[idx] > 4) {
+            line_sizes[idx] = 4;
+        }
     }
-
-    // Создаем финальную головоломку (только цифры в черных клетках, белые клетки пустые)
-    int** puzzle = create_field(rows, cols);
-
-    // Заполняем финальную головоломку
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
-            // Если в решении это черная клетка
-            if (solution[i][j] == BLACK) {
-                // Ищем, какой черной клетке она соответствует
-                bool found = false;
-                for (int k = 0; k < black_count && !found; k++) {
-                    if (blacks[k].x == i && blacks[k].y == j) {
-                        // Устанавливаем цифру равную количеству белых клеток в линиях
-                        puzzle[i][j] = lengths[k];
-                        found = true;
+    
+    int** final_puzzle = make_board(r, c);
+    int i, j;
+    for (i = 0; i < r; i++) {
+        for (j = 0; j < c; j++) {
+            if (board_state[i][j] == BLACK_CELL) {
+                int found_it = 0;
+                int k;
+                for (k = 0; k < black_total && found_it == 0; k++) {
+                    if (blacks[k].row == i && blacks[k].col == j) {
+                        final_puzzle[i][j] = line_sizes[k];
+                        found_it = 1;
                     }
                 }
-
-                // Если почему-то не нашли (такого не должно быть), ставим 2
-                if (!found) {
-                    puzzle[i][j] = 2;
+                if (found_it == 0) {
+                    final_puzzle[i][j] = 2;
                 }
-            }
-            else {
-                // Белая клетка в финальной головоломке
-                puzzle[i][j] = WHITE;
+            } else {
+                final_puzzle[i][j] = WHITE_CELL;
             }
         }
     }
-
-    // Освобождаем промежуточные данные
-    free(blacks);      // Освобождаем массив черных клеток
-    free(lengths);     // Освобождаем массив длин линий
-    free_field(solution, rows);  // Освобождаем поле с решением
-
-    // Возвращаем готовую головоломку
-    return puzzle;
+    
+    free(blacks);
+    free(line_sizes);
+    clear_board(board_state, r);
+    
+    return final_puzzle;
 }
 
-// Функция вывода поля в консоль
-void print_field(int** field, int rows, int cols) {
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
-            // Если белая клетка - выводим точку
-            if (field[i][j] == WHITE) {
+void show_board(int** board, int r, int c) {
+    int i, j;
+    for (i = 0; i < r; i++) {
+        for (j = 0; j < c; j++) {
+            if (board[i][j] == WHITE_CELL) {
                 printf(".");
+            } else {
+                printf("%d", board[i][j]);
             }
-            else {
-                // Иначе выводим цифру (преобразуем int в char, добавляя код '0')
-                printf("%d", field[i][j]);
-            }
-
-            // Между символами ставим пробел, кроме последнего в строке
-            if (j < cols - 1) {
+            if (j != c - 1) {
                 printf(" ");
             }
         }
-        // В конце каждой строки переходим на новую
         printf("\n");
     }
 }
 
-// Главная функция программы
 int main() {
-    // Инициализируем генератор случайных чисел текущим временем
     srand(time(NULL));
-
-    // Объявляем переменные для хранения размеров поля
+    
     int rows, cols;
-
-    // Считываем размеры поля из ввода пользователя
     scanf("%d %d", &rows, &cols);
-
-    // Проверяем минимальный размер поля (3x3)
+    
     if (rows < 3 || cols < 3) {
-        return 1;  // Завершаем программу с кодом ошибки
+        return 0;
     }
-
-    // Генерируем и выводим 3 различные головоломки
-    for (int gen = 0; gen < 3; gen++) {
-        // Генерируем головоломку
-        int** puzzle = generate_puzzle(rows, cols);
-
-        // Проверяем, что генерация прошла успешно
-        if (!puzzle) {
-            return 1;  // Завершаем программу с кодом ошибки
-        }
-
-        // Выводим головоломку в консоль
-        print_field(puzzle, rows, cols);
-
-        // Между головоломками добавляем пустую строку (кроме последней)
-        if (gen < 2) {
+    
+    int game_num;
+    for (game_num = 0; game_num < 3; game_num++) {
+        int** game_board = make_game(rows, cols);
+        show_board(game_board, rows, cols);
+        if (game_num < 2) {
             printf("\n");
         }
-
-        // Освобождаем память, занятую головоломкой
-        free_field(puzzle, rows);
+        clear_board(game_board, rows);
     }
-
-    // Завершаем программу успешно
+    
     return 0;
 }
