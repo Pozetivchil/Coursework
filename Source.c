@@ -2,176 +2,180 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define EMPTY_CELL 0
-#define BLACK_CELL -1
-#define WHITE_CELL 0
+#define EMPTY 0
+#define BLACK -1
+#define WHITE 0
 
-struct cell_pos {
-    int row;
-    int col;
-};
+typedef struct {
+    int x;
+    int y;
+} Point;
 
-struct move_dir {
-    int row_change;
-    int col_change;
-};
+typedef struct {
+    int dx;
+    int dy;
+} Direction;
 
-struct move_dir all_dirs[4] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+Direction directions[4] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
 
-int** make_board(int r, int c) {
-    int** board = (int**)malloc(r * sizeof(int*));
-    int i, j;
-    for (i = 0; i < r; i++) {
-        board[i] = (int*)malloc(c * sizeof(int));
-        for (j = 0; j < c; j++) {
-            board[i][j] = EMPTY_CELL;
+int** create_field(int rows, int cols) {
+    int** field = (int**)malloc(rows * sizeof(int*));
+    
+    for (int i = 0; i < rows; i++) {
+        field[i] = (int*)malloc(cols * sizeof(int));
+        
+        for (int j = 0; j < cols; j++) {
+            field[i][j] = EMPTY;
         }
     }
-    return board;
+    
+    return field;
 }
 
-void clear_board(int** board, int r) {
-    int i;
-    for (i = 0; i < r; i++) {
-        free(board[i]);
+void free_field(int** field, int rows) {
+    for (int i = 0; i < rows; i++) {
+        free(field[i]);
     }
-    free(board);
+    free(field);
 }
 
-int in_bounds(int row, int col, int r, int c) {
-    return (row >= 0 && row < r && col >= 0 && col < c) ? 1 : 0;
+int is_valid(int x, int y, int rows, int cols) {
+    if (x >= 0 && x < rows && y >= 0 && y < cols) 
+        return 1; 
+    else 
+        return 0;  
 }
 
-int check_black_spot(int** board, int row, int col, int r, int c) {
-    int dir_idx;
-    for (dir_idx = 0; dir_idx < 4; dir_idx++) {
-        int next_row = row + all_dirs[dir_idx].row_change;
-        int next_col = col + all_dirs[dir_idx].col_change;
-        if (in_bounds(next_row, next_col, r, c) && board[next_row][next_col] == BLACK_CELL) {
+int can_place_black(int** field, int x, int y, int rows, int cols) {
+    for (int i = 0; i < 4; i++) {
+        int nx = x + directions[i].dx;
+        int ny = y + directions[i].dy;
+        
+        if (is_valid(nx, ny, rows, cols) && field[nx][ny] == BLACK) {
             return 0;
         }
     }
+    
     return 1;
 }
 
-int make_line(int** board, int start_row, int start_col, struct move_dir way, int r, int c, int line_id) {
-    int line_size = 0;
-    int current_row = start_row + way.row_change;
-    int current_col = start_col + way.col_change;
+int draw_line(int** field, int x, int y, Direction dir, int rows, int cols, int id) {
+    int len = 0;
     
-    int limit = 2 + rand() % 3;
+    int cx = x + dir.dx;
+    int cy = y + dir.dy;
     
-    while (line_size < limit && in_bounds(current_row, current_col, r, c) == 1 && board[current_row][current_col] == EMPTY_CELL) {
-        board[current_row][current_col] = line_id;
-        line_size++;
-        current_row += way.row_change;
-        current_col += way.col_change;
+    int max_len = 2 + rand() % 3;
+    
+    while (is_valid(cx, cy, rows, cols) == 1 && 
+           field[cx][cy] == EMPTY && len < max_len) {
+        field[cx][cy] = id;
+        len++;
+        
+        cx += dir.dx;
+        cy += dir.dy;
     }
     
-    return line_size;
+    return len;
 }
 
-int** make_game(int r, int c) {
-    int** board_state = make_board(r, c);
+int** generate_puzzle(int rows, int cols) {
+    int** solution = create_field(rows, cols);
     
-    int black_limit = (r * c) / 6;
-    if (black_limit < 3) black_limit = 3;
-    if (black_limit > 8) black_limit = 8;
-    int black_total = 3 + rand() % (black_limit - 2);
+    int black_count = 3 + rand() % ((rows * cols) / 6);
     
-    struct cell_pos* blacks = (struct cell_pos*)malloc(black_total * sizeof(struct cell_pos));
-    int* line_sizes = (int*)calloc(black_total, sizeof(int));
+    Point* blacks = (Point*)malloc(black_count * sizeof(Point));
+    int* lengths = (int*)calloc(black_count, sizeof(int));
     
     int placed = 0;
-    int tries = 0;
-    int max_tries = r * c * 3;
+    int attempts = 0, max_attempts = rows * cols * 3;
     
-    while (placed < black_total && tries < max_tries) {
-        int rand_row = rand() % r;
-        int rand_col = rand() % c;
+    while (placed < black_count && attempts < max_attempts) {
+        int x = rand() % rows;
+        int y = rand() % cols;
         
-        if (board_state[rand_row][rand_col] == EMPTY_CELL && check_black_spot(board_state, rand_row, rand_col, r, c) == 1) {
-            board_state[rand_row][rand_col] = BLACK_CELL;
-            blacks[placed].row = rand_row;
-            blacks[placed].col = rand_col;
+        if (solution[x][y] == EMPTY && can_place_black(solution, x, y, rows, cols) == 1) {
+            solution[x][y] = BLACK;
+            
+            blacks[placed].x = x;
+            blacks[placed].y = y;
+            
             placed++;
         }
-        tries++;
+        
+        attempts++;
     }
     
-    if (placed < black_total) {
-        black_total = placed;
+    if (placed < black_count) {
+        black_count = placed;
     }
     
-    int idx;
-    for (idx = 0; idx < black_total; idx++) {
-        int dir_list[4] = {0, 1, 2, 3};
-        int swap_idx;
-        for (swap_idx = 0; swap_idx < 4; swap_idx++) {
-            int swap_with = rand() % 4;
-            int temp = dir_list[swap_idx];
-            dir_list[swap_idx] = dir_list[swap_with];
-            dir_list[swap_with] = temp;
+    for (int i = 0; i < black_count; i++) {
+        int dirs_to_draw[4] = {0, 1, 2, 3};
+        
+        for (int j = 0; j < 4; j++) {
+            int k = rand() % 4;
+            
+            int temp = dirs_to_draw[j];
+            dirs_to_draw[j] = dirs_to_draw[k];
+            dirs_to_draw[k] = temp;
         }
         
-        int lines_made = 1 + rand() % 2;
-        int dir_idx;
-        for (dir_idx = 0; dir_idx < lines_made; dir_idx++) {
-            struct move_dir chosen_dir = all_dirs[dir_list[dir_idx]];
-            line_sizes[idx] += make_line(board_state, blacks[idx].row, blacks[idx].col, chosen_dir, r, c, idx + 1);
+        int lines_to_draw = 1 + rand() % 2;
+        
+        for (int j = 0; j < lines_to_draw; j++) {
+            Direction dir = directions[dirs_to_draw[j]];
+            
+            lengths[i] += draw_line(solution, blacks[i].x, blacks[i].y, dir, rows, cols, i+1);
         }
         
-        if (line_sizes[idx] == 0) {
-            struct move_dir random_dir = all_dirs[rand() % 4];
-            line_sizes[idx] = make_line(board_state, blacks[idx].row, blacks[idx].col, random_dir, r, c, idx + 1);
+        if (lengths[i] == 0) {
+            Direction dir = directions[rand() % 4];
+            lengths[i] = draw_line(solution, blacks[i].x, blacks[i].y, dir, rows, cols, i+1);
         }
         
-        if (line_sizes[idx] > 4) {
-            line_sizes[idx] = 4;
-        }
+        if (lengths[i] > 4) lengths[i] = 4;
     }
     
-    int** final_puzzle = make_board(r, c);
-    int i, j;
-    for (i = 0; i < r; i++) {
-        for (j = 0; j < c; j++) {
-            if (board_state[i][j] == BLACK_CELL) {
-                int found_it = 0;
-                int k;
-                for (k = 0; k < black_total && found_it == 0; k++) {
-                    if (blacks[k].row == i && blacks[k].col == j) {
-                        final_puzzle[i][j] = line_sizes[k];
-                        found_it = 1;
+    int** puzzle = create_field(rows, cols);
+    
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            if (solution[i][j] == BLACK) {
+                int found = 0;
+                for (int k = 0; k < black_count && found == 0; k++) {
+                    if (blacks[k].x == i && blacks[k].y == j) {
+                        puzzle[i][j] = lengths[k];
+                        found = 1;
                     }
                 }
-                if (found_it == 0) {
-                    final_puzzle[i][j] = 2;
+                
+                if (found == 0) {
+                    puzzle[i][j] = 2;
                 }
             } else {
-                final_puzzle[i][j] = WHITE_CELL;
+                puzzle[i][j] = WHITE;
             }
         }
     }
     
     free(blacks);
-    free(line_sizes);
-    clear_board(board_state, r);
+    free(lengths);
+    free_field(solution, rows);
     
-    return final_puzzle;
+    return puzzle;
 }
 
-void show_board(int** board, int r, int c) {
-    int i, j;
-    for (i = 0; i < r; i++) {
-        for (j = 0; j < c; j++) {
-            if (board[i][j] == WHITE_CELL) {
+void print_field(int** field, int rows, int cols) {
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            if (field[i][j] == WHITE) {
                 printf(".");
             } else {
-                printf("%d", board[i][j]);
+                printf("%d", field[i][j]);
             }
-            if (j != c - 1) {
-                printf(" ");
-            }
+            
+            printf(" ");
         }
         printf("\n");
     }
@@ -181,20 +185,27 @@ int main() {
     srand(time(NULL));
     
     int rows, cols;
+    
     scanf("%d %d", &rows, &cols);
     
     if (rows < 3 || cols < 3) {
-        return 0;
+        return 1;
     }
     
-    int game_num;
-    for (game_num = 0; game_num < 3; game_num++) {
-        int** game_board = make_game(rows, cols);
-        show_board(game_board, rows, cols);
-        if (game_num < 2) {
+    for (int gen = 0; gen < 3; gen++) {
+        int** puzzle = generate_puzzle(rows, cols);
+        
+        if (puzzle == NULL) {
+            return 1;
+        }
+        
+        print_field(puzzle, rows, cols);
+        
+        if (gen < 2) {
             printf("\n");
         }
-        clear_board(game_board, rows);
+        
+        free_field(puzzle, rows);
     }
     
     return 0;
